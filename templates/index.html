@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fake News Detector</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+  <div class="container">
+
+    <!-- HEADER -->
+    <div class="header">
+      <h1>Fake News Detector</h1>
+      <p class="subtitle">
+        Paste any news article below. The AI model will classify it as
+        <strong>REAL</strong> or <strong>FAKE</strong> with a confidence score.
+      </p>
+    </div>
+
+    <!-- INPUT SECTION -->
+    <div class="card">
+      <label for="articleInput" class="input-label">News Article</label>
+      <textarea
+        id="articleInput"
+        rows="10"
+        placeholder="Paste the full news article text here... (minimum 20 characters)"
+      ></textarea>
+      <div class="char-count" id="charCount">0 characters</div>
+      <button id="detectBtn" onclick="detectNews()">
+        Analyze Article
+      </button>
+      <button class="btn-secondary" onclick="clearAll()">Clear</button>
+    </div>
+
+    <!-- LOADING SPINNER -->
+    <div id="loading" class="loading hidden">
+      <div class="spinner"></div>
+      <p>Analyzing article...</p>
+    </div>
+
+    <!-- RESULT SECTION -->
+    <div id="result" class="result-card hidden">
+      <div id="resultLabel" class="result-label"></div>
+      <div id="resultConfidence" class="result-confidence"></div>
+
+      <div class="prob-bars">
+        <div class="prob-row">
+          <span class="prob-name fake-text">FAKE</span>
+          <div class="prob-bar-bg">
+            <div id="fakeBar" class="prob-bar fake-bar"></div>
+          </div>
+          <span id="fakeProb" class="prob-value fake-text"></span>
+        </div>
+        <div class="prob-row">
+          <span class="prob-name real-text">REAL</span>
+          <div class="prob-bar-bg">
+            <div id="realBar" class="prob-bar real-bar"></div>
+          </div>
+          <span id="realProb" class="prob-value real-text"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ERROR MESSAGE -->
+    <div id="errorBox" class="error-box hidden"></div>
+
+    <!-- STATS BAR -->
+    <div id="statsBar" class="stats-bar">
+      <span>Total analyzed: <strong id="statTotal">—</strong></span>
+      <span>Fake detected: <strong id="statFake">—</strong></span>
+      <span>Real detected: <strong id="statReal">—</strong></span>
+      <span>Avg confidence: <strong id="statConf">—</strong></span>
+    </div>
+
+    <!-- HISTORY SECTION -->
+    <div class="card">
+      <div class="history-header">
+        <h2>Recent Predictions</h2>
+        <button class="btn-small" onclick="loadHistory()">Refresh</button>
+      </div>
+      <div id="historyList">
+        <p class="muted">Click Refresh to load history.</p>
+      </div>
+    </div>
+
+  </div><!-- end .container -->
+
+  <script>
+    // ── Update character count as user types ──
+    const textarea  = document.getElementById('articleInput');
+    const charCount = document.getElementById('charCount');
+    textarea.addEventListener('input', () => {
+      const n = textarea.value.length;
+      charCount.textContent = n + ' character' + (n !== 1 ? 's' : '');
+    });
+
+    // ── Main detection function ──
+    async function detectNews() {
+      const article = textarea.value.trim();
+      const btn     = document.getElementById('detectBtn');
+
+      hideAll();
+
+      if (!article) {
+        showError('Please paste a news article before analyzing.');
+        return;
+      }
+      if (article.length < 20) {
+        showError('Article is too short. Please provide at least 20 characters.');
+        return;
+      }
+
+      // Show loading
+      document.getElementById('loading').classList.remove('hidden');
+      btn.disabled    = true;
+      btn.textContent = 'Analyzing...';
+
+      try {
+        const response = await fetch('/predict', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ article: article })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || data.error) {
+          showError(data.error || 'Server returned an error. Try again.');
+          return;
+        }
+
+        showResult(data);
+        loadStats();
+
+      } catch (err) {
+        showError('Could not connect to server. Make sure app.py is running.');
+      } finally {
+        document.getElementById('loading').classList.add('hidden');
+        btn.disabled    = false;
+        btn.textContent = 'Analyze Article';
+      }
+    }
+
+    // ── Display the prediction result ──
+    function showResult(data) {
+      const resultDiv  = document.getElementById('result');
+      const labelEl    = document.getElementById('resultLabel');
+      const confEl     = document.getElementById('resultConfidence');
+
+      labelEl.textContent = data.prediction;
+      labelEl.className   = 'result-label ' + (data.prediction === 'FAKE' ? 'fake-result' : 'real-result');
+
+      confEl.textContent  = 'Confidence: ' + data.confidence + '%';
+
+      // Probability bars
+      document.getElementById('fakeProb').textContent = data.fake_prob + '%';
+      document.getElementById('realProb').textContent = data.real_prob + '%';
+      document.getElementById('fakeBar').style.width  = data.fake_prob + '%';
+      document.getElementById('realBar').style.width  = data.real_prob + '%';
+
+      resultDiv.classList.remove('hidden');
+    }
+
+    // ── Load prediction history ──
+    async function loadHistory() {
+      const listEl = document.getElementById('historyList');
+      listEl.innerHTML = '<p class="muted">Loading...</p>';
+
+      try {
+        const res  = await fetch('/history');
+        const data = await res.json();
+
+        if (data.length === 0) {
+          listEl.innerHTML = '<p class="muted">No predictions yet.</p>';
+          return;
+        }
+
+        listEl.innerHTML = data.map(d => `
+          <div class="history-item">
+            <div class="history-top">
+              <span class="history-badge ${d.prediction.toLowerCase()}">${d.prediction}</span>
+              <span class="history-conf">${d.confidence}% confident</span>
+              <span class="history-time">${new Date(d.timestamp).toLocaleString()}</span>
+            </div>
+            <p class="history-preview">${d.article.substring(0, 120)}...</p>
+          </div>
+        `).join('');
+
+      } catch (e) {
+        listEl.innerHTML = '<p class="muted">Could not load history.</p>';
+      }
+    }
+
+    // ── Load global stats ──
+    async function loadStats() {
+      try {
+        const res  = await fetch('/stats');
+        const data = await res.json();
+        document.getElementById('statTotal').textContent = data.total_predictions;
+        document.getElementById('statFake').textContent  = data.total_fake;
+        document.getElementById('statReal').textContent  = data.total_real;
+        document.getElementById('statConf').textContent  = data.avg_confidence + '%';
+      } catch(e) {}
+    }
+
+    // ── Helpers ──
+    function hideAll() {
+      document.getElementById('result').classList.add('hidden');
+      document.getElementById('errorBox').classList.add('hidden');
+      document.getElementById('loading').classList.add('hidden');
+    }
+
+    function showError(msg) {
+      const el = document.getElementById('errorBox');
+      el.textContent = msg;
+      el.classList.remove('hidden');
+    }
+
+    function clearAll() {
+      textarea.value          = '';
+      charCount.textContent   = '0 characters';
+      hideAll();
+    }
+
+    // Load stats on page load
+    loadStats();
+  </script>
+
+</body>
+</html>
