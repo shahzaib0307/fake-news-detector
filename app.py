@@ -2,7 +2,7 @@ from flask import Flask, render_template, request, jsonify
 import joblib
 import sqlite3
 import os
-from datetime import datetime
+from datetime import datetime,timezone
 from preprocess import clean_text
 
 # ─────────────────────────────────────────────────
@@ -62,7 +62,7 @@ def save_to_db(article, prediction, confidence, fake_prob, real_prob):
             round(confidence, 2),
             round(fake_prob, 2),
             round(real_prob, 2),
-            datetime.now().isoformat()
+            datetime.now(timezone.utc).isoformat()
         )
     )
     conn.commit()
