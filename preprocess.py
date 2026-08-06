@@ -3,70 +3,28 @@ import re
 import string
 import nltk
 from nltk.corpus import stopwords
-from nltk.tokenize import word_tokenize
+from nltk.tokenize import wordpunct_tokenize
 
-# Tell NLTK where to find the local data folder
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-nltk.data.path.append(os.path.join(BASE_DIR, "nltk_data"))
+NLTK_DATA = os.path.join(BASE_DIR, "nltk_data")
+nltk.data.path.insert(0, NLTK_DATA)
 
-# Load English stopwords once
 stop_words = set(stopwords.words("english"))
 
 def clean_text(text):
-    """
-    Full preprocessing pipeline for a raw news article string.
-    Returns a cleaned, space-joined string of meaningful tokens.
-    """
-
-    # Guard: if input is not a string (e.g. NaN), return empty
     if not isinstance(text, str):
         return ""
 
-    # 1. Lowercase everything
     text = text.lower()
-
-    # 2. Remove content inside square brackets e.g. [VIDEO], [PHOTO]
     text = re.sub(r"\[.*?\]", "", text)
-
-    # 3. Remove URLs (http, https, www)
     text = re.sub(r"https?://\S+|www\.\S+", "", text)
-
-    # 4. Remove HTML tags
     text = re.sub(r"<.*?>+", "", text)
-
-    # 5. Remove punctuation
     text = re.sub(r"[%s]" % re.escape(string.punctuation), "", text)
-
-    # 6. Remove newlines
     text = re.sub(r"\n", " ", text)
-
-    # 7. Remove words containing digits
     text = re.sub(r"\w*\d\w*", "", text)
-
-    # 8. Remove extra whitespace
     text = re.sub(r"\s+", " ", text).strip()
 
-    # 9. Tokenize
-    tokens = word_tokenize(text)
-
-    # 10. Remove stopwords and short words
+    tokens = wordpunct_tokenize(text)
     tokens = [w for w in tokens if w not in stop_words and len(w) > 2]
 
-    # 11. Return cleaned text
     return " ".join(tokens)
-
-
-# Test when this file is run directly
-if __name__ == "__main__":
-    test_cases = [
-        "BREAKING: Donald Trump said on Tuesday that https://news.com elections were RIGGED in 2024!!!",
-        "Scientists have discovered a new vaccine that cures all diseases. <p>Click here!</p>",
-        "The president of the United States held a press conference about the economy.",
-        None,
-        "",
-    ]
-
-    for t in test_cases:
-        print(f"Original : {t}")
-        print(f"Cleaned  : {clean_text(t)}")
-        print()
