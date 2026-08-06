@@ -1,12 +1,16 @@
+import os
 import re
 import string
 import nltk
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 
+# Tell NLTK where to find the local data
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+nltk.data.path.append(os.path.join(BASE_DIR, "nltk_data"))
 
-# Load English stopwords once at module level (efficient)
-stop_words = set(stopwords.words('english'))
+# Load English stopwords
+stop_words = set(stopwords.words("english"))
 
 def clean_text(text):
     """
