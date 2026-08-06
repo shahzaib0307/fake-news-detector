@@ -4,10 +4,6 @@ import nltk
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 
-# Download required NLTK data silently
-nltk.download('stopwords', quiet=True)
-nltk.download('punkt',     quiet=True)
-nltk.download('punkt_tab', quiet=True)
 
 # Load English stopwords once at module level (efficient)
 stop_words = set(stopwords.words('english'))
