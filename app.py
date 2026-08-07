@@ -49,15 +49,18 @@ def init_db():
     print("Database initialized.")
 
 def save_to_db(article, prediction, confidence, fake_prob, real_prob):
-    """Save a prediction result to the database."""
+    """Save a prediction result to SQLite when running locally."""
+    if os.environ.get("VERCEL"):
+        return
+
     conn = sqlite3.connect(DB_PATH)
-    c    = conn.cursor()
+    c = conn.cursor()
     c.execute(
         '''INSERT INTO predictions
-           (article, prediction, confidence, fake_prob, real_prob, timestamp)
-           VALUES (?, ?, ?, ?, ?, ?)''',
+        (article, prediction, confidence, fake_prob, real_prob, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?)''',
         (
-            article[:500],              # store first 500 chars only
+            article[:500],
             prediction,
             round(confidence, 2),
             round(fake_prob, 2),
