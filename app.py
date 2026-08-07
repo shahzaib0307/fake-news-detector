@@ -2,13 +2,21 @@ from flask import Flask, render_template, request, jsonify
 import joblib
 import sqlite3
 import os
-from datetime import datetime,timezone
+from datetime import datetime, timezone
+from supabase import create_client
 from preprocess import clean_text
 
 # ─────────────────────────────────────────────────
 # INITIALIZE FLASK APP
 # ─────────────────────────────────────────────────
 app = Flask(__name__)
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+
+supabase = None
+
+if SUPABASE_URL and SUPABASE_KEY:
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # ─────────────────────────────────────────────────
 # LOAD TRAINED MODEL AND VECTORIZER
@@ -49,25 +57,38 @@ def init_db():
     print("Database initialized.")
 
 def save_to_db(article, prediction, confidence, fake_prob, real_prob):
-    """Save a prediction result to SQLite when running locally."""
-    if os.environ.get("VERCEL"):
+    data = {
+        "article": article[:500],
+        "prediction": prediction,
+        "confidence": round(confidence, 2),
+        "fake_prob": round(fake_prob, 2),
+        "real_prob": round(real_prob, 2),
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+
+    # Vercel → Supabase
+    if supabase:
+        supabase.table("predictions").insert(data).execute()
         return
 
+    # Local → SQLite
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
+
     c.execute(
         '''INSERT INTO predictions
         (article, prediction, confidence, fake_prob, real_prob, timestamp)
         VALUES (?, ?, ?, ?, ?, ?)''',
         (
-            article[:500],
-            prediction,
-            round(confidence, 2),
-            round(fake_prob, 2),
-            round(real_prob, 2),
-            datetime.now(timezone.utc).isoformat()
+            data["article"],
+            data["prediction"],
+            data["confidence"],
+            data["fake_prob"],
+            data["real_prob"],
+            data["timestamp"]
         )
     )
+
     conn.commit()
     conn.close()
 
@@ -132,52 +153,97 @@ def predict():
 
 @app.route('/history')
 def history():
-    """Return the last 20 predictions from the database."""
+
+    if supabase:
+        response = (
+            supabase
+            .table("predictions")
+            .select("*")
+            .order("id", desc=True)
+            .limit(20)
+            .execute()
+        )
+
+        return jsonify(response.data)
+
     conn = sqlite3.connect(DB_PATH)
-    c    = conn.cursor()
+    c = conn.cursor()
+
     c.execute('''
         SELECT article, prediction, confidence, fake_prob, real_prob, timestamp
         FROM predictions
         ORDER BY id DESC
         LIMIT 20
     ''')
+
     rows = c.fetchall()
     conn.close()
 
-    results = [
+    return jsonify([
         {
-            'article':    r[0],
-            'prediction': r[1],
-            'confidence': r[2],
-            'fake_prob':  r[3],
-            'real_prob':  r[4],
-            'timestamp':  r[5]
+            "article": r[0],
+            "prediction": r[1],
+            "confidence": r[2],
+            "fake_prob": r[3],
+            "real_prob": r[4],
+            "timestamp": r[5]
         }
         for r in rows
-    ]
-    return jsonify(results)
+    ])
 
 
 @app.route('/stats')
 def stats():
-    """Return overall statistics from the database."""
+
+    if supabase:
+        response = (
+            supabase
+            .table("predictions")
+            .select("prediction,confidence")
+            .execute()
+        )
+
+        rows = response.data
+
+        total = len(rows)
+        total_fake = sum(1 for r in rows if r["prediction"] == "FAKE")
+        total_real = sum(1 for r in rows if r["prediction"] == "REAL")
+
+        avg_conf = (
+            sum(float(r["confidence"]) for r in rows) / len(rows)
+            if rows else 0
+        )
+
+        return jsonify({
+            "total_predictions": total,
+            "total_fake": total_fake,
+            "total_real": total_real,
+            "avg_confidence": round(avg_conf, 2)
+        })
+
+    # Local SQLite
     conn = sqlite3.connect(DB_PATH)
-    c    = conn.cursor()
+    c = conn.cursor()
+
     c.execute('SELECT COUNT(*) FROM predictions')
     total = c.fetchone()[0]
+
     c.execute("SELECT COUNT(*) FROM predictions WHERE prediction = 'FAKE'")
     total_fake = c.fetchone()[0]
+
     c.execute("SELECT COUNT(*) FROM predictions WHERE prediction = 'REAL'")
     total_real = c.fetchone()[0]
+
     c.execute('SELECT AVG(confidence) FROM predictions')
     avg_conf = c.fetchone()[0]
+
     conn.close()
 
     return jsonify({
-        'total_predictions': total,
-        'total_fake':        total_fake,
-        'total_real':        total_real,
-        'avg_confidence':    round(avg_conf, 2) if avg_conf else 0
+        "total_predictions": total,
+        "total_fake": total_fake,
+        "total_real": total_real,
+        "avg_confidence": round(avg_conf, 2) if avg_conf else 0
     })
 
 
